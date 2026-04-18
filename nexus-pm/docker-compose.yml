@@ -1,0 +1,150 @@
+version: "3.9"
+
+services:
+
+  # ── Infrastructure ─────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks: [nexus]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    networks: [nexus]
+
+  mysql-auth:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: auth_db
+    volumes: [auth-db-data:/var/lib/mysql]
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      retries: 10
+
+  mysql-tasks:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: tasks_db
+    volumes: [tasks-db-data:/var/lib/mysql]
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      retries: 10
+
+  # ── Services ───────────────────────────────────────────────
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      DB_HOST: mysql-auth
+      DB_NAME: auth_db
+      DB_USER: root
+      DB_PASS: root
+      SECRET_KEY: nexus-super-secret-key-change-in-prod
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      mysql-auth: { condition: service_healthy }
+    networks: [nexus]
+
+  task-service:
+    build: ./services/task-service
+    environment:
+      DB_HOST: mysql-tasks
+      DB_NAME: tasks_db
+      DB_USER: root
+      DB_PASS: root
+      KAFKA_BOOTSTRAP: kafka:9092
+      AUTH_SERVICE_URL: http://auth-service:8001
+    depends_on:
+      mysql-tasks: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    networks: [nexus]
+
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379/1
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    depends_on:
+      kafka: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [nexus]
+
+  celery-worker:
+    build: ./services/notification-service
+    command: celery -A workers.celery worker --loglevel=info
+    environment:
+      REDIS_URL: redis://redis:6379/1
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    depends_on: [redis]
+    networks: [nexus]
+
+  websocket-service:
+    build: ./services/websocket-service
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379/2
+    depends_on:
+      kafka: { condition: service_healthy }
+    networks: [nexus]
+
+  # ── Frontend ───────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    networks: [nexus]
+
+  # ── Gateway ────────────────────────────────────────────────
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on: [auth-service, task-service, notification-service, websocket-service, frontend]
+    networks: [nexus]
+
+  # ── Dev Tools ──────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"   # Web UI to see sent emails
+    networks: [nexus]
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on: [kafka]
+    networks: [nexus]
+
+volumes:
+  auth-db-data:
+  tasks-db-data:
+
+networks:
+  nexus:
+    driver: bridge

@@ -1,0 +1,5 @@
+flask==3.0.3
+celery==5.4.0
+redis==5.0.4
+aiokafka==0.11.0
+gunicorn==22.0.0

@@ -1,0 +1,4 @@
+python-socketio[asyncio_client]==5.11.3
+aiohttp==3.9.5
+aiokafka==0.11.0
+redis==5.0.4
