@@ -1,182 +1,113 @@
-# ⚡ Nexus PM — Event-Driven Project Management Platform
+# ⚡ Nexus PM
+### The Event-Driven Project Management Core
 
-A production-grade, MNC-level microservices project management tool built with:
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python-Version](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![React-Version](https://img.shields.io/badge/React-18-blue.svg)](https://react.dev/)
+[![Docker-Safe](https://img.shields.io/badge/Docker-Ready-green.svg)](https://www.docker.com/)
 
-- **Django** — Auth & User management (JWT + OAuth2)
-- **FastAPI** — Async Task/Project/Sprint service
-- **Flask + Celery** — Notification service with email queuing
-- **Python socket.io** — Real-time WebSocket server
-- **Apache Kafka** — Event bus (decoupled microservices)
-- **MySQL** — Per-service isolated databases
-- **Redis** — Sessions, WS rooms, Celery broker
-- **React + Zustand** — Kanban board with live updates
-- **Nginx** — API Gateway with rate limiting
-- **Docker Compose** — One-command full stack
+**Nexus PM** is a high-concurrency, microservices-based project orchestration platform. It leverages advanced event-driven architecture (EDA) to provide real-time updates across distributed systems, making it suitable for enterprise-level team coordination.
 
 ---
 
-## 🚀 Run in ONE command
+## 🏗 High-Level Architecture
+
+Nexus PM is built on a "Decoupled Service Pattern" where no microservice communicates directly with another. All state changes are broadcast via **Apache Kafka**, allowing for extreme scalability and easier maintenance.
+
+### Key Components:
+- **🔐 Auth Engine (Django 5)**: Secure identity management using JWT and OAuth2 integration.
+- **⚡ Task Plane (FastAPI)**: High-performance async service for projects, sprints, and task lifecycles.
+- **📣 Notification Hub (Flask + Celery)**: Asynchronous email and alert delivery system.
+- **🌌 Live Sync (Socket.io)**: Real-time mission control updates via localized WebSocket rooms.
+- **🚥 API Gateway (Nginx)**: Centralized entry point with rate-limiting and JWT routing.
+
+---
+
+## 🚀 Quick Start
+
+Initialize the entire distributed system in your local environment with a single command:
 
 ```bash
-git clone <your-repo>
+# Clone the repository
+git clone https://github.com/santhoshkumar7507/Project-Management.git
+
+# Enter the directory
 cd nexus-pm
+
+# Spin up all 12+ containers (Kafka, Redis, MySQL, Services, UI)
 docker compose up --build
 ```
 
-That's it. Everything starts automatically.
+---
+
+## 📊 System Dashboard
+
+Once the containers are operational, you can access the various control planes:
+
+| Interface | Access URL | Description |
+| :--- | :--- | :--- |
+| **Main Web App** | [http://localhost](http://localhost) | Production Kanban UI |
+| **Kafka UI** | [http://localhost:8080](http://localhost:8080) | Real-time event monitoring |
+| **Mailhog** | [http://localhost:8025](http://localhost:8025) | Local email testing dashboard |
 
 ---
 
-## 🌐 Access
+## 🔌 API Ecosystem
 
-| Service              | URL                          |
-|---------------------|-------------------------------|
-| **App (Frontend)**  | http://localhost              |
-| **Mailhog (Emails)**| http://localhost:8025         |
-| **Kafka UI**        | http://localhost:8080         |
+The system exposes a comprehensive RESTful API divided by business logic domains.
 
----
+### 1. Identity & Access
+*   `POST /api/auth/register/` - Operator registration
+*   `POST /api/auth/login/` - Token generation (JWT)
+*   `GET /api/auth/me/` - Identity verification
 
-## 📋 Architecture
+### 2. Orchestration (Tasks & Sprints)
+*   `GET /api/projects/` - Retrieve active projects
+*   `POST /api/tasks/` - Deploy a new task
+*   `PATCH /api/tasks/{id}/assign` - Reassign task operator
 
-```
-Browser
-  └── Nginx (port 80) ← API Gateway + rate limit + JWT routing
-        ├── /api/auth/         → Django Auth Service      (:8001)
-        ├── /api/tasks/        → FastAPI Task Service      (:8002)
-        ├── /api/projects/     → FastAPI Task Service      (:8002)
-        ├── /api/sprints/      → FastAPI Task Service      (:8002)
-        ├── /api/notifications/→ Flask Notify Service      (:8003)
-        └── /ws/               → socket.io WS Server       (:8004)
-
-Event Bus: Apache Kafka
-  task.created  ──► WebSocket Service (broadcast to project room)
-  task.updated  ──► WebSocket Service + Notification Service
-  task.assigned ──► WebSocket Service + Notification Service
-                                        └── Celery → Email (Mailhog)
-```
+### 3. Event Streams
+*   `task.created` -> Broadcasters -> All UI nodes on relevant project
+*   `task.updated` -> Notification Engine -> Async Email Delivery
 
 ---
 
-## 🔑 API Reference
+## 🛠 Engineering Decisions
 
-### Auth (Django — :8001)
-| Method | Endpoint              | Description         |
-|--------|-----------------------|---------------------|
-| POST   | /api/auth/register/   | Register new user   |
-| POST   | /api/auth/login/      | Login → JWT tokens  |
-| POST   | /api/auth/refresh/    | Refresh access token|
-| GET    | /api/auth/me/         | Current user        |
-| GET    | /api/auth/users/      | All users list      |
+### Why use Apache Kafka?
+Direct HTTP calls between services (Request-Response) create tight coupling and cascading failures. By using Kafka as an event bus, the system achieves **Temporal Decoupling**. If the Notification service is down, events are queued and processed once it returns, with zero data loss.
 
-### Tasks (FastAPI — :8002)
-| Method | Endpoint                     | Description         |
-|--------|------------------------------|---------------------|
-| GET    | /api/projects/               | List projects       |
-| POST   | /api/projects/               | Create project      |
-| GET    | /api/tasks/?project_id=...   | List tasks          |
-| POST   | /api/tasks/                  | Create task         |
-| PATCH  | /api/tasks/{id}              | Update task/status  |
-| PATCH  | /api/tasks/{id}/assign       | Assign to user      |
-| DELETE | /api/tasks/{id}              | Delete task         |
-| GET    | /api/sprints/?project_id=... | List sprints        |
-| POST   | /api/sprints/                | Create sprint       |
+### Per-Service Database Isolation
+Each microservice owns its data schema (MySQL/Redis). This ensures that a change in the Task schema never breaks the Auth service, enabling independent CI/CD pipelines for different teams.
 
-### Notifications (Flask — :8003)
-| Method | Endpoint                              | Description       |
-|--------|---------------------------------------|-------------------|
-| GET    | /api/notifications/{user_id}          | Get notifications |
-| PATCH  | /api/notifications/{user_id}/read-all | Mark all read     |
+### Async I/O (FastAPI + SQLAlchemy 2.0)
+The Task Plane uses fully asynchronous database sessions and I/O operations, allowing it to handle thousands of concurrent status updates with minimal resource footprint.
 
 ---
 
-## 🧪 Test the API manually
+## 📁 Repository Structure
 
-```bash
-# Register
-curl -X POST http://localhost/api/auth/register/ \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dev@nexus.com","password":"nexus123","full_name":"Dev User"}'
-
-# Login → copy the access token
-curl -X POST http://localhost/api/auth/login/ \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dev@nexus.com","password":"nexus123"}'
-
-# Create project (replace TOKEN)
-curl -X POST http://localhost/api/projects/ \
-  -H "Authorization: Bearer TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"My First Sprint","description":"Backend team","owner_id":"YOUR_USER_ID"}'
-
-# Create task
-curl -X POST http://localhost/api/tasks/ \
-  -H "Authorization: Bearer TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"project_id":"PROJECT_ID","title":"Setup CI pipeline","priority":"high"}'
-```
-
----
-
-## 🐳 Docker Services
-
-| Container              | Image                        | Purpose                    |
-|------------------------|------------------------------|----------------------------|
-| nginx                  | Custom                       | API Gateway                |
-| auth-service           | Custom (Django 5)            | User auth + JWT            |
-| task-service           | Custom (FastAPI)             | Projects / Tasks / Sprints |
-| notification-service   | Custom (Flask)               | Notifications + REST       |
-| celery-worker          | Custom (Celery)              | Async email jobs           |
-| websocket-service      | Custom (socket.io)           | Live WS broadcast          |
-| frontend               | Custom (React + Vite)        | Kanban UI                  |
-| kafka                  | confluentinc/cp-kafka:7.5.0  | Event bus                  |
-| zookeeper              | confluentinc/cp-zookeeper    | Kafka coordination         |
-| redis                  | redis:7-alpine               | Cache + Celery broker      |
-| mysql-auth             | mysql:8                      | Auth database              |
-| mysql-tasks            | mysql:8                      | Tasks database             |
-| mailhog                | mailhog/mailhog              | Email dev server           |
-| kafka-ui               | provectuslabs/kafka-ui       | Kafka dashboard            |
-
----
-
-## 📁 Project Structure
-
-```
+```text
 nexus-pm/
-├── docker-compose.yml         ← One command to run everything
-├── .github/workflows/ci.yml   ← GitHub Actions CI/CD
-├── .env.example               ← Environment variables reference
-├── nginx/
-│   ├── Dockerfile
-│   └── nginx.conf             ← API Gateway config
-├── services/
-│   ├── auth-service/          ← Django 5 + DRF + simplejwt
-│   ├── task-service/          ← FastAPI async + SQLAlchemy 2
-│   ├── notification-service/  ← Flask + Celery + Kafka consumer
-│   └── websocket-service/     ← socket.io + Kafka consumer
-└── frontend/                  ← React + Vite + Zustand + DnD
+├── frontend/             # React + Vite + Zustand (UI Layer)
+├── services/             # Distributed Logic
+│   ├── auth-service/     # Identity Management (Django)
+│   ├── task-service/     # Core Business Logic (FastAPI)
+│   ├── notification-hub/ # Alert Processing (Flask/Celery)
+│   └── ws-sync/          # Live Stream (Socket.io)
+├── nginx/                # API Gateway & Reverse Proxy
+└── docker-compose.yml    # System Orchestration
 ```
 
 ---
 
-## 💡 Key Engineering Decisions
+## 🛑 Decommissioning
 
-**Why Kafka instead of direct HTTP between services?**
-Services emit events and never call each other directly. Adding a Slack service or audit log requires zero changes to existing code — just add a new Kafka consumer. This is the open/closed principle at the infrastructure level.
-
-**Why per-service databases?**
-True data isolation. The auth team can migrate their schema independently. No shared ORM models, no accidental cross-service joins.
-
-**Why FastAPI for tasks (not Django)?**
-Async I/O for the highest-traffic service. Task updates, drag-drop, sprint changes — all non-blocking with SQLAlchemy 2 async sessions.
-
-**Why socket.io rooms?**
-Updates are scoped to `project_{id}` rooms. A user on Project A never receives noise from Project B. Scales cleanly.
-
----
-
-## 🛑 Stop everything
+To gracefully shut down all services and purge volumes:
 
 ```bash
-docker compose down -v   # -v also removes database volumes
+docker compose down -v
 ```
+
+---
+**Maintained by [Santhosh Kumar](https://github.com/santhoshkumar7507)**
